@@ -1,60 +1,9 @@
-const https = require('https');
-
-async function getStockPrice(ticker) {
-  return new Promise((resolve) => {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
-    https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          const price = json.chart.result[0].meta.regularMarketPrice;
-          resolve(price);
-        } catch(e) {
-          resolve(null);
-        }
-      });
-    }).on('error', () => resolve(null));
-  });
-}
-async function getStockPrice(ticker) {
-  return new Promise((resolve) => {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
-    https.get(url, { 
-      headers: { 
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9'
-      } 
-    }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice;
-          if (price && price > 0) {
-            resolve(price);
-          } else {
-            resolve(null);
-          }
-        } catch(e) {
-          resolve(null);
-        }
-      });
-    }).on('error', () => resolve(null));
-  });
-}
-
-
-setInterval(updateAllPrices, 5 * 60 * 1000);
-setTimeout(updateAllPrices, 3000);
 const express = require('express');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const PgSession = require('connect-pg-simple')(session);
+const https = require('https');
 
 const app = express();
 const pool = new Pool({
@@ -77,7 +26,44 @@ function requireAuth(req, res, next) {
   res.redirect('/');
 }
 
-// Ana sayfa - giriş
+async function getStockPrice(ticker) {
+  return new Promise((resolve) => {
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+    https.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice;
+          if (price && price > 0) resolve(price);
+          else resolve(null);
+        } catch(e) { resolve(null); }
+      });
+    }).on('error', () => resolve(null));
+  });
+}
+
+async function updateAllPrices() {
+  try {
+    const result = await pool.query('SELECT DISTINCT ticker FROM positions');
+    for (const row of result.rows) {
+      const price = await getStockPrice(row.ticker);
+      if (price) {
+        await pool.query('UPDATE positions SET current_price = $1 WHERE ticker = $2', [price, row.ticker]);
+        console.log(`${row.ticker}: $${price}`);
+      }
+    }
+  } catch(e) {
+    console.error('Fiyat guncelleme hatasi:', e);
+  }
+}
+
 app.get('/', (req, res) => {
   if (req.session.userId) return res.redirect('/dashboard');
   res.send(`<!DOCTYPE html>
@@ -137,7 +123,6 @@ app.get('/', (req, res) => {
 </html>`);
 });
 
-// Kayıt
 app.post('/register', async (req, res) => {
   const { username, password, weekly_pass } = req.body;
   try {
@@ -155,7 +140,6 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// Giriş
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -171,14 +155,13 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Çıkış
 app.get('/logout', (req, res) => {
   req.session.destroy();
   res.redirect('/');
 });
 
-// Dashboard
 app.get('/dashboard', requireAuth, async (req, res) => {
+  await updateAllPrices();
   const positions = await pool.query('SELECT * FROM positions WHERE user_id = $1 ORDER BY created_at DESC', [req.session.userId]);
   const rows = positions.rows;
   const totalCost = rows.reduce((s, p) => s + parseFloat(p.qty) * parseFloat(p.cost), 0);
@@ -216,22 +199,22 @@ app.get('/dashboard', requireAuth, async (req, res) => {
   .badge.pos { background: #dcfce7; color: #15803d; }
   .badge.neg { background: #fee2e2; color: #b91c1c; }
   .add-form { background: #fff; border-radius: 12px; padding: 1.25rem; border: 1px solid #e8e8e8; }
-  .add-form h3 { font-size: 15px; margin-bottom: 1rem; }
   .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
   .form-grid input { border: 1px solid #e8e8e8; border-radius: 8px; padding: 8px 12px; font-size: 13px; width: 100%; }
-  .form-grid input:focus { outline: none; border-color: #1a1a1a; }
   .btn { background: #1a1a1a; color: #fff; border: none; border-radius: 8px; padding: 9px 20px; font-size: 13px; cursor: pointer; margin-top: 10px; }
-  .btn:hover { background: #333; }
   .btn-del { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 12px; }
-  .price-inp { width: 80px; border: 1px solid #eee; border-radius: 6px; padding: 4px 8px; font-size: 13px; text-align: right; }
   .section-label { font-size: 12px; font-weight: 600; color: #888; margin: 1.25rem 0 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; }
+  .refresh { font-size: 12px; color: #888; margin-top: 4px; }
   @media(max-width:600px){ .metrics{grid-template-columns:1fr 1fr;} body{padding:1rem;} }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="header">
-    <h1>📊 ${req.session.username} — Portföy</h1>
+    <div>
+      <h1>📊 ${req.session.username} — Portföy</h1>
+      <p class="refresh">Fiyatlar her sayfa açılışında güncellenir</p>
+    </div>
     <a href="/logout" class="logout">Çıkış yap</a>
   </div>
 
@@ -261,7 +244,7 @@ app.get('/dashboard', requireAuth, async (req, res) => {
         </td>
         <td class="r">${p.qty}</td>
         <td class="r">$${parseFloat(p.cost).toFixed(2)}</td>
-        <td class="r"><input class="price-inp" value="${parseFloat(p.current_price || p.cost).toFixed(2)}" onchange="updatePrice(${p.id}, this.value)"></td>
+        <td class="r">$${parseFloat(p.current_price || p.cost).toFixed(2)}</td>
         <td class="r">$${val.toFixed(2)}</td>
         <td class="r"><span class="badge ${pnl >= 0 ? 'pos' : 'neg'}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</span><div style="font-size:11px;color:#888;text-align:right">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</div></td>
         <td class="r"><button class="btn-del" onclick="deletePos(${p.id})">Sil</button></td>
@@ -277,7 +260,6 @@ app.get('/dashboard', requireAuth, async (req, res) => {
       <input id="name" placeholder="Şirket adı">
       <input id="qty" type="number" placeholder="Adet">
       <input id="cost" type="number" placeholder="Maliyet $" step="0.01">
-      <input id="current" type="number" placeholder="Güncel $" step="0.01">
       <input id="stop" type="number" placeholder="Stop $" step="0.01">
       <input id="target" type="number" placeholder="Hedef $" step="0.01">
     </div>
@@ -291,15 +273,10 @@ async function addPos() {
     name: document.getElementById('name').value,
     qty: document.getElementById('qty').value,
     cost: document.getElementById('cost').value,
-    current_price: document.getElementById('current').value,
     stop_price: document.getElementById('stop').value,
     target_price: document.getElementById('target').value
   };
   await fetch('/positions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-  location.reload();
-}
-async function updatePrice(id, price) {
-  await fetch('/positions/' + id, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ current_price: price }) });
   location.reload();
 }
 async function deletePos(id) {
@@ -312,27 +289,19 @@ async function deletePos(id) {
 </html>`);
 });
 
-// Pozisyon ekle
 app.post('/positions', requireAuth, async (req, res) => {
-  const { ticker, name, qty, cost, current_price, stop_price, target_price } = req.body;
+  const { ticker, name, qty, cost, stop_price, target_price } = req.body;
+  const price = await getStockPrice(ticker);
   await pool.query('INSERT INTO positions (user_id, ticker, name, qty, cost, current_price, stop_price, stop_limit, target_price) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
-    [req.session.userId, ticker, name, qty, cost, current_price || cost, stop_price || null, stop_price ? parseFloat(stop_price) - 2 : null, target_price || null]);
+    [req.session.userId, ticker, name, qty, cost, price || cost, stop_price || null, stop_price ? parseFloat(stop_price) - 2 : null, target_price || null]);
   res.json({ ok: true });
 });
 
-// Fiyat güncelle
-app.patch('/positions/:id', requireAuth, async (req, res) => {
-  await pool.query('UPDATE positions SET current_price = $1 WHERE id = $2 AND user_id = $3', [req.body.current_price, req.params.id, req.session.userId]);
-  res.json({ ok: true });
-});
-
-// Pozisyon sil
 app.delete('/positions/:id', requireAuth, async (req, res) => {
   await pool.query('DELETE FROM positions WHERE id = $1 AND user_id = $2', [req.params.id, req.session.userId]);
   res.json({ ok: true });
 });
 
-// Admin — haftalık şifre güncelle
 app.get('/admin', requireAuth, async (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="tr"><head><meta charset="UTF-8"><title>Admin</title>
