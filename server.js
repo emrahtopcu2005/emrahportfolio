@@ -1,3 +1,41 @@
+const https = require('https');
+
+async function getStockPrice(ticker) {
+  return new Promise((resolve) => {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+    https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const price = json.chart.result[0].meta.regularMarketPrice;
+          resolve(price);
+        } catch(e) {
+          resolve(null);
+        }
+      });
+    }).on('error', () => resolve(null));
+  });
+}
+
+async function updateAllPrices() {
+  try {
+    const result = await pool.query('SELECT DISTINCT ticker FROM positions');
+    for (const row of result.rows) {
+      const price = await getStockPrice(row.ticker);
+      if (price) {
+        await pool.query('UPDATE positions SET current_price = $1 WHERE ticker = $2', [price, row.ticker]);
+        console.log(`${row.ticker}: $${price}`);
+      }
+    }
+  } catch(e) {
+    console.error('Fiyat guncelleme hatasi:', e);
+  }
+}
+
+setInterval(updateAllPrices, 5 * 60 * 1000);
+setTimeout(updateAllPrices, 3000);
 const express = require('express');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
