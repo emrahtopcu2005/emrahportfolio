@@ -18,21 +18,35 @@ async function getStockPrice(ticker) {
     }).on('error', () => resolve(null));
   });
 }
-
-async function updateAllPrices() {
-  try {
-    const result = await pool.query('SELECT DISTINCT ticker FROM positions');
-    for (const row of result.rows) {
-      const price = await getStockPrice(row.ticker);
-      if (price) {
-        await pool.query('UPDATE positions SET current_price = $1 WHERE ticker = $2', [price, row.ticker]);
-        console.log(`${row.ticker}: $${price}`);
-      }
-    }
-  } catch(e) {
-    console.error('Fiyat guncelleme hatasi:', e);
-  }
+async function getStockPrice(ticker) {
+  return new Promise((resolve) => {
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+    https.get(url, { 
+      headers: { 
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9'
+      } 
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice;
+          if (price && price > 0) {
+            resolve(price);
+          } else {
+            resolve(null);
+          }
+        } catch(e) {
+          resolve(null);
+        }
+      });
+    }).on('error', () => resolve(null));
+  });
 }
+
 
 setInterval(updateAllPrices, 5 * 60 * 1000);
 setTimeout(updateAllPrices, 3000);
