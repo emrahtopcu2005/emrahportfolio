@@ -168,11 +168,18 @@ app.get('/dashboard', requireAuth, async (req, res) => {
   if (sort === 'pnl_desc') orderBy = '((qty * COALESCE(current_price, cost)) - (qty * cost)) DESC';
   if (sort === 'pnl_asc') orderBy = '((qty * COALESCE(current_price, cost)) - (qty * cost)) ASC';
 
-  const positions = await pool.query(`SELECT * FROM positions WHERE user_id = $1 ORDER BY ${orderBy}`, [req.session.userId]);
+ const positions = await pool.query(`SELECT * FROM positions WHERE user_id = $1 AND status='open' ORDER BY ${orderBy}`, [req.session.userId]);
   const rows = positions.rows;
   const totalCost = rows.reduce((s, p) => s + parseFloat(p.qty) * parseFloat(p.cost), 0);
   const totalVal = rows.reduce((s, p) => s + parseFloat(p.qty) * parseFloat(p.current_price || p.cost), 0);
   const totalPnl = totalVal - totalCost;
+
+  const closedResult = await pool.query("SELECT * FROM positions WHERE user_id = $1 AND status='closed' ORDER BY sell_date DESC", [req.session.userId]);
+  const closedRows = closedResult.rows;
+  const closedCost = closedRows.reduce((s, p) => s + parseFloat(p.qty) * parseFloat(p.cost), 0);
+  const realizedPnl = closedRows.reduce((s, p) => s + (parseFloat(p.qty) * parseFloat(p.sell_price) - parseFloat(p.qty) * parseFloat(p.cost)), 0);
+  const grandTotalPnl = totalPnl + realizedPnl;
+  const grandCost = totalCost + closedCost;
 
   res.send(`<!DOCTYPE html>
 <html lang="tr">
@@ -187,7 +194,7 @@ app.get('/dashboard', requireAuth, async (req, res) => {
   .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
   h1 { font-size: 22px; font-weight: 600; }
   .logout { font-size: 13px; color: #888; text-decoration: none; }
-  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+  .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 1.5rem; }
   .metric { background: #fff; border-radius: 12px; padding: 16px 18px; border: 1px solid #e8e8e8; }
   .metric-label { font-size: 12px; color: #888; margin-bottom: 4px; }
   .metric-value { font-size: 22px; font-weight: 500; }
@@ -244,7 +251,7 @@ app.get('/dashboard', requireAuth, async (req, res) => {
   <div class="metrics">
     <div class="metric"><div class="metric-label">Toplam yatırım</div><div class="metric-value">$${totalCost.toFixed(2)}</div></div>
     <div class="metric"><div class="metric-label">Güncel değer</div><div class="metric-value">$${totalVal.toFixed(2)}</div></div>
-   <div class="metric"><div class="metric-label">Kar/Zarar</div><div class="metric-value ${totalPnl >= 0 ? 'pos' : 'neg'}">${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}</div><div style="font-size:13px;color:#888;margin-top:2px;">${totalCost > 0 ? (totalPnl >= 0 ? '+' : '') + (totalPnl/totalCost*100).toFixed(2) + '%' : ''}</div></div>
+   <div class="metric"><div class="metric-label">Kar/Zarar (Toplam)</div><div class="metric-value ${grandTotalPnl >= 0 ? 'pos' : 'neg'}">${grandTotalPnl >= 0 ? '+' : ''}${grandTotalPnl.toFixed(2)}</div><div style="font-size:13px;color:#888;margin-top:2px;">${grandCost > 0 ? (grandTotalPnl >= 0 ? '+' : '') + (grandTotalPnl/grandCost*100).toFixed(2) + '%' : ''}</div></div><div class="metric"><div class="metric-label">Açık Pozisyon K/Z</div><div class="metric-value ${totalPnl >= 0 ? 'pos' : 'neg'}">${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}</div></div><div class="metric"><div class="metric-label">Gerçekleşmiş K/Z</div><div class="metric-value ${realizedPnl >= 0 ? 'pos' : 'neg'}">${realizedPnl >= 0 ? '+' : ''}${realizedPnl.toFixed(2)}</div></div>
   </div>
 
   <p class="section-label">Pozisyonlar</p>
@@ -286,7 +293,7 @@ app.get('/dashboard', requireAuth, async (req, res) => {
         <td class="r">
           <div class="actions">
             <button class="btn-edit" onclick='openEdit(${JSON.stringify({id:p.id,ticker:p.ticker,name:p.name||'',qty:p.qty,cost:p.cost,stop_price:p.stop_price,target_price:p.target_price})})'>Düzenle</button>
-            <button class="btn-del" onclick="deletePos(${p.id})">Sil</button>
+            <button class="btn-edit" onclick="sellPos(${p.id})">Sat</button><button class="btn-del" onclick="deletePos(${p.id})">Sil</button>
           </div>
         </td>
       </tr>`;
@@ -294,7 +301,7 @@ app.get('/dashboard', requireAuth, async (req, res) => {
     </tbody>
   </table>
 
-  <p class="section-label">Yeni pozisyon ekle</p>
+  ${closedRows.length > 0 ? `   <p class="section-label">Kapatılmış İşlemler</p>   <table>     <thead><tr>       <th>Hisse</th><th class="r">Adet</th><th class="r">Maliyet</th>       <th class="r">Satış</th><th class="r">Gerçekleşmiş K/Z</th><th class="r">Tarih</th>     </tr></thead>     <tbody>     ${closedRows.map(p => {       const pnl = (parseFloat(p.qty) * parseFloat(p.sell_price)) - (parseFloat(p.qty) * parseFloat(p.cost));       const pct = ((parseFloat(p.sell_price) - parseFloat(p.cost)) / parseFloat(p.cost) * 100);       const date = new Date(p.sell_date).toLocaleDateString('tr-TR');       return `<tr>         <td><div class="ticker">${p.ticker}</div><div class="sub">${p.name || ''}</div></td>         <td class="r">${p.qty}</td>         <td class="r">$${parseFloat(p.cost).toFixed(2)}</td>         <td class="r">$${parseFloat(p.sell_price).toFixed(2)}</td>         <td class="r"><span class="badge ${pnl >= 0 ? 'pos' : 'neg'}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</span><div style="font-size:11px;color:#888;text-align:right">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</div></td>         <td class="r">${date}</td>       </tr>`;     }).join('')}     </tbody>   </table> ` : ''}  <p class="section-label">Yeni pozisyon ekle</p>
   <div class="add-form">
     <div class="form-grid">
       <input id="ticker" placeholder="Ticker (TQQQ)">
@@ -370,7 +377,7 @@ async function addPos() {
   await fetch('/positions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
   location.reload();
 }
-async function deletePos(id) {
+async function sellPos(id) {   const price = prompt('Satış fiyatı ($):');   if (!price) return;   await fetch('/positions/' + id + '/sell', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sell_price: price }) });   location.reload(); } async function deletePos(id) {
   if (!confirm('Silinsin mi?')) return;
   await fetch('/positions/' + id, { method: 'DELETE' });
   location.reload();
@@ -397,7 +404,7 @@ app.patch('/positions/:id', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.delete('/positions/:id', requireAuth, async (req, res) => {
+app.post('/positions/:id/sell', requireAuth, async (req, res) => {   const { sell_price } = req.body;   await pool.query("UPDATE positions SET status='closed', sell_price=$1, sell_date=NOW() WHERE id=$2 AND user_id=$3", [sell_price, req.params.id, req.session.userId]);   res.json({ ok: true }); });  app.delete('/positions/:id', requireAuth, async (req, res) => {
   await pool.query('DELETE FROM positions WHERE id = $1 AND user_id = $2', [req.params.id, req.session.userId]);
   res.json({ ok: true });
 });
