@@ -377,7 +377,7 @@ async function addPos() {
   await fetch('/positions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
   location.reload();
 }
-async function sellPos(id) {   const qty = prompt('Kaç adet satıyorsun?');   if (!qty) return;   const price = prompt('Satış fiyatı ($):');   if (!price) return;   await fetch('/positions/' + id + '/sell', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sell_price: price, sell_qty: qty }) });   location.reload(); } } async function deletePos(id) {
+async function sellPos(id) {   const qty = prompt('Kaç adet satıyorsun?');   if (!qty) return;   const price = prompt('Satış fiyatı ($):');   if (!price) return;   await fetch('/positions/' + id + '/sell', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sell_price: price, sell_qty: qty }) });   location.reload(); } async function deletePos(id) {
   if (!confirm('Silinsin mi?')) return;
   await fetch('/positions/' + id, { method: 'DELETE' });
   location.reload();
