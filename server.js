@@ -377,7 +377,7 @@ async function addPos() {
   await fetch('/positions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
   location.reload();
 }
-async function sellPos(id) {   const price = prompt('Satış fiyatı ($):');   if (!price) return;   await fetch('/positions/' + id + '/sell', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sell_price: price }) });   location.reload(); } async function deletePos(id) {
+async function sellPos(id) {   const qty = prompt('Kaç adet satıyorsun?');   if (!qty) return;   const price = prompt('Satış fiyatı ($):');   if (!price) return;   await fetch('/positions/' + id + '/sell', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sell_price: price, sell_qty: qty }) });   location.reload(); } } async function deletePos(id) {
   if (!confirm('Silinsin mi?')) return;
   await fetch('/positions/' + id, { method: 'DELETE' });
   location.reload();
@@ -404,7 +404,7 @@ app.patch('/positions/:id', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/positions/:id/sell', requireAuth, async (req, res) => {   const { sell_price } = req.body;   await pool.query("UPDATE positions SET status='closed', sell_price=$1, sell_date=NOW() WHERE id=$2 AND user_id=$3", [sell_price, req.params.id, req.session.userId]);   res.json({ ok: true }); });  app.delete('/positions/:id', requireAuth, async (req, res) => {
+app.post('/positions/:id/sell', requireAuth, async (req, res) => {   const { sell_price, sell_qty } = req.body;   const result = await pool.query('SELECT * FROM positions WHERE id=$1 AND user_id=$2', [req.params.id, req.session.userId]);   const pos = result.rows[0];   if (!pos) return res.status(404).json({ error: 'not found' });    const totalQty = parseFloat(pos.qty);   const sellQty = parseFloat(sell_qty);    if (sellQty >= totalQty) {     await pool.query("UPDATE positions SET status='closed', sell_price=$1, sell_date=NOW() WHERE id=$2", [sell_price, req.params.id]);   } else {     await pool.query(       'INSERT INTO positions (user_id, ticker, name, qty, cost, current_price, stop_price, stop_limit, target_price, status, sell_price, sell_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())',       [req.session.userId, pos.ticker, pos.name, sellQty, pos.cost, pos.current_price, pos.stop_price, pos.stop_limit, pos.target_price, 'closed', sell_price]     );     await pool.query('UPDATE positions SET qty=$1 WHERE id=$2', [totalQty - sellQty, req.params.id]);   }   res.json({ ok: true }); });  app.delete('/positions/:id', requireAuth, async (req, res) => {
   await pool.query('DELETE FROM positions WHERE id = $1 AND user_id = $2', [req.params.id, req.session.userId]);
   res.json({ ok: true });
 });
