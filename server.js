@@ -328,6 +328,7 @@ app.get('/dashboard', requireAuth, async (req, res) => {
 </div>
 
 <script>
+setTimeout(() => location.reload(), 3 * 60 * 1000);
 let editId = null;
 
 function openEdit(p) {
