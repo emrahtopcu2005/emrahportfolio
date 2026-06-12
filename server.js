@@ -25,7 +25,6 @@ function requireAuth(req, res, next) {
   if (req.session.userId) return next();
   res.redirect('/');
 }
-
 async function getStockPrice(ticker) {
   return new Promise((resolve) => {
     const url = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
@@ -41,13 +40,19 @@ async function getStockPrice(ticker) {
         try {
           const json = JSON.parse(data);
           const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice;
-          if (price && price > 0) { const prevClose = json?.chart?.result?.[0]?.meta?.previousClose || json?.chart?.result?.[0]?.meta?.chartPreviousClose; const changePct = (price && prevClose) ? ((price - prevClose) / prevClose * 100) : null; resolve({ price, changePct }); } }); } });
-          else resolve(null);
+          const prevClose = json?.chart?.result?.[0]?.meta?.previousClose || json?.chart?.result?.[0]?.meta?.chartPreviousClose;
+          if (price && price > 0) {
+            const changePct = prevClose ? ((price - prevClose) / prevClose * 100) : null;
+            resolve({ price, changePct });
+          } else {
+            resolve(null);
+          }
         } catch(e) { resolve(null); }
       });
     }).on('error', () => resolve(null));
   });
 }
+
 
 async function updateAllPrices() {
   try {
