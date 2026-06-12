@@ -41,7 +41,7 @@ async function getStockPrice(ticker) {
         try {
           const json = JSON.parse(data);
           const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice;
-          if (price && price > 0) resolve(price);
+          if (price && price > 0) resolve({ price, changePct: json?.chart?.result?.[0]?.meta?.regularMarketChangePercent || null });
           else resolve(null);
         } catch(e) { resolve(null); }
       });
@@ -53,9 +53,9 @@ async function updateAllPrices() {
   try {
     const result = await pool.query("SELECT DISTINCT ticker FROM positions WHERE status='open'");
     for (const row of result.rows) {
-      const price = await getStockPrice(row.ticker);
+      const data = await getStockPrice(row.ticker); const price = data ? data.price : null; const changePct = data ? data.changePct : null;
       if (price) {
-        await pool.query("UPDATE positions SET current_price = $1 WHERE ticker = $2 AND status='open'", [price, row.ticker]);
+        await pool.query("UPDATE positions SET current_price = $1, day_change_pct = $2 WHERE ticker = $3 AND status='open'", [price, changePct, row.ticker]);
         console.log(`${row.ticker}: $${price}`);
       }
     }
@@ -258,7 +258,7 @@ res.send(`<!DOCTYPE html>
   <table>
     <thead><tr>
       <th>Hisse</th><th class="r">Adet</th><th class="r">Maliyet</th>
-      <th class="r">Güncel</th>
+      <th class="r">Güncel</th>       <th class="r">Günlük %</th>
       <th class="r">Değer
         <span class="sort-arrows">
           <a href="/dashboard?sort=value_desc" title="Büyükten küçüğe" class="${sort==='value_desc'?'active-sort':''}">▼</a>
@@ -287,7 +287,7 @@ res.send(`<!DOCTYPE html>
         </td>
         <td class="r">${p.qty}</td>
         <td class="r">$${parseFloat(p.cost).toFixed(2)}</td>
-        <td class="r">$${parseFloat(p.current_price || p.cost).toFixed(2)}</td>
+        <td class="r">$${parseFloat(p.current_price || p.cost).toFixed(2)}</td>         <td class="r">${p.day_change_pct !== null && p.day_change_pct !== undefined ? `<span class="badge ${parseFloat(p.day_change_pct) >= 0 ? 'pos' : 'neg'}">${parseFloat(p.day_change_pct) >= 0 ? '+' : ''}${parseFloat(p.day_change_pct).toFixed(2)}%</span>` : '-'}</td>
         <td class="r">$${val.toFixed(2)}</td>
         <td class="r"><span class="badge ${pnl >= 0 ? 'pos' : 'neg'}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</span><div style="font-size:11px;color:#888;text-align:right">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</div></td>
         <td class="r">
@@ -437,9 +437,9 @@ async function deletePos(id) {
 
 app.post('/positions', requireAuth, async (req, res) => {
   const { ticker, name, qty, cost, stop_price, target_price } = req.body;
-  const price = await getStockPrice(ticker);
-  await pool.query("INSERT INTO positions (user_id, ticker, name, qty, cost, current_price, stop_price, stop_limit, target_price, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'open')",
-    [req.session.userId, ticker, name, qty, cost, price || cost, stop_price || null, stop_price ? parseFloat(stop_price) - 2 : null, target_price || null]);
+  const stockData = await getStockPrice(ticker); const price = stockData ? stockData.price : null; const changePct = stockData ? stockData.changePct : null;
+  await pool.query("INSERT INTO positions (user_id, ticker, name, qty, cost, current_price, stop_price, stop_limit, target_price, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10)",
+    [req.session.userId, ticker, name, qty, cost, price || cost, stop_price || null, stop_price ? parseFloat(stop_price) - 2 : null, target_price || null, changePct]);
   res.json({ ok: true });
 });
 
