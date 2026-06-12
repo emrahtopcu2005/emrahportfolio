@@ -159,7 +159,6 @@ app.get('/logout', (req, res) => {
   req.session.destroy();
   res.redirect('/');
 });
-Parça 2 — Bunu Parça 1'in altına ekle:
 javascript
 app.get('/dashboard', requireAuth, async (req, res) => {
   await updateAllPrices();
