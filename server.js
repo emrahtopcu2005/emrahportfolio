@@ -41,7 +41,7 @@ async function getStockPrice(ticker) {
         try {
           const json = JSON.parse(data);
           const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice;
-          if (price && price > 0) const prevClose = json?.chart?.result?.[0]?.meta?.previousClose || json?.chart?.result?.[0]?.meta?.chartPreviousClose; const changePct = (price && prevClose) ? ((price - prevClose) / prevClose * 100) : null; resolve({ price, changePct });
+          if (price && price > 0) { const prevClose = json?.chart?.result?.[0]?.meta?.previousClose || json?.chart?.result?.[0]?.meta?.chartPreviousClose; const changePct = (price && prevClose) ? ((price - prevClose) / prevClose * 100) : null; resolve({ price, changePct }); } });
           else resolve(null);
         } catch(e) { resolve(null); }
       });
