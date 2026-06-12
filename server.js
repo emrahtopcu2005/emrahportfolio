@@ -159,7 +159,6 @@ app.get('/logout', (req, res) => {
   req.session.destroy();
   res.redirect('/');
 });
-javascript
 app.get('/dashboard', requireAuth, async (req, res) => {
   await updateAllPrices();
   const sort = req.query.sort || '';
