@@ -1,4 +1,4 @@
-const express = require('express');
+onst express = require('express');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
@@ -159,10 +159,18 @@ app.get('/logout', (req, res) => {
   req.session.destroy();
   res.redirect('/');
 });
-
+Parça 2 — Bunu Parça 1'in altına ekle:
+javascript
 app.get('/dashboard', requireAuth, async (req, res) => {
   await updateAllPrices();
-  const positions = await pool.query('SELECT * FROM positions WHERE user_id = $1 ORDER BY created_at DESC', [req.session.userId]);
+  const sort = req.query.sort || '';
+  let orderBy = 'created_at DESC';
+  if (sort === 'value_desc') orderBy = '(qty * COALESCE(current_price, cost)) DESC';
+  if (sort === 'value_asc') orderBy = '(qty * COALESCE(current_price, cost)) ASC';
+  if (sort === 'pnl_desc') orderBy = '((qty * COALESCE(current_price, cost)) - (qty * cost)) DESC';
+  if (sort === 'pnl_asc') orderBy = '((qty * COALESCE(current_price, cost)) - (qty * cost)) ASC';
+
+  const positions = await pool.query(`SELECT * FROM positions WHERE user_id = $1 ORDER BY ${orderBy}`, [req.session.userId]);
   const rows = positions.rows;
   const totalCost = rows.reduce((s, p) => s + parseFloat(p.qty) * parseFloat(p.cost), 0);
   const totalVal = rows.reduce((s, p) => s + parseFloat(p.qty) * parseFloat(p.current_price || p.cost), 0);
@@ -177,7 +185,7 @@ app.get('/dashboard', requireAuth, async (req, res) => {
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding: 2rem; }
-  .wrap { max-width: 960px; margin: 0 auto; }
+  .wrap { max-width: 1000px; margin: 0 auto; }
   .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
   h1 { font-size: 22px; font-weight: 600; }
   .logout { font-size: 13px; color: #888; text-decoration: none; }
@@ -190,6 +198,9 @@ app.get('/dashboard', requireAuth, async (req, res) => {
   thead tr { background: #fafafa; border-bottom: 1px solid #e8e8e8; }
   th { padding: 10px 14px; text-align: left; font-size: 12px; font-weight: 500; color: #888; }
   th.r { text-align: right; }
+  th a { color: #888; text-decoration: none; }
+  th a:hover { color: #1a1a1a; }
+  th a.active-sort { color: #1a1a1a; font-weight: 700; }
   td { padding: 12px 14px; border-bottom: 1px solid #f0f0f0; }
   td.r { text-align: right; font-variant-numeric: tabular-nums; }
   tr:last-child td { border-bottom: none; }
@@ -202,10 +213,24 @@ app.get('/dashboard', requireAuth, async (req, res) => {
   .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
   .form-grid input { border: 1px solid #e8e8e8; border-radius: 8px; padding: 8px 12px; font-size: 13px; width: 100%; }
   .btn { background: #1a1a1a; color: #fff; border: none; border-radius: 8px; padding: 9px 20px; font-size: 13px; cursor: pointer; margin-top: 10px; }
-  .btn-del { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 12px; }
+  .actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .btn-edit { background: none; border: none; color: #2563eb; cursor: pointer; font-size: 12px; padding: 0; }
+  .btn-del { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 12px; padding: 0; }
   .section-label { font-size: 12px; font-weight: 600; color: #888; margin: 1.25rem 0 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; }
   .refresh { font-size: 12px; color: #888; margin-top: 4px; }
-  @media(max-width:600px){ .metrics{grid-template-columns:1fr 1fr;} body{padding:1rem;} }
+  .sort-arrows { display: inline-flex; flex-direction: column; line-height: 1; vertical-align: middle; margin-left: 4px; }
+  .sort-arrows a { font-size: 9px; }
+
+  /* Modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); align-items: center; justify-content: center; z-index: 100; }
+  .modal-overlay.active { display: flex; }
+  .modal { background: #fff; border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 360px; }
+  .modal h3 { font-size: 16px; margin-bottom: 1rem; }
+  .modal .form-grid { grid-template-columns: 1fr 1fr; margin-bottom: 1rem; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .btn-cancel { background: #f0f0f0; color: #333; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; cursor: pointer; }
+
+  @media(max-width:600px){ .metrics{grid-template-columns:1fr 1fr;} body{padding:1rem;} table{font-size:12px;} }
 </style>
 </head>
 <body>
@@ -228,7 +253,20 @@ app.get('/dashboard', requireAuth, async (req, res) => {
   <table>
     <thead><tr>
       <th>Hisse</th><th class="r">Adet</th><th class="r">Maliyet</th>
-      <th class="r">Güncel</th><th class="r">Değer</th><th class="r">Kar/Zarar</th><th class="r">İşlem</th>
+      <th class="r">Güncel</th>
+      <th class="r">Değer
+        <span class="sort-arrows">
+          <a href="/dashboard?sort=value_desc" title="Büyükten küçüğe" class="${sort==='value_desc'?'active-sort':''}">▼</a>
+          <a href="/dashboard?sort=value_asc" title="Küçükten büyüğe" class="${sort==='value_asc'?'active-sort':''}">▲</a>
+        </span>
+      </th>
+      <th class="r">Kar/Zarar
+        <span class="sort-arrows">
+          <a href="/dashboard?sort=pnl_desc" title="Büyükten küçüğe" class="${sort==='pnl_desc'?'active-sort':''}">▼</a>
+          <a href="/dashboard?sort=pnl_asc" title="Küçükten büyüğe" class="${sort==='pnl_asc'?'active-sort':''}">▲</a>
+        </span>
+      </th>
+      <th class="r">İşlem</th>
     </tr></thead>
     <tbody>
     ${rows.length === 0 ? '<tr><td colspan="7" style="text-align:center;color:#888;padding:2rem;">Henüz pozisyon yok</td></tr>' : rows.map(p => {
@@ -247,7 +285,12 @@ app.get('/dashboard', requireAuth, async (req, res) => {
         <td class="r">$${parseFloat(p.current_price || p.cost).toFixed(2)}</td>
         <td class="r">$${val.toFixed(2)}</td>
         <td class="r"><span class="badge ${pnl >= 0 ? 'pos' : 'neg'}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</span><div style="font-size:11px;color:#888;text-align:right">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</div></td>
-        <td class="r"><button class="btn-del" onclick="deletePos(${p.id})">Sil</button></td>
+        <td class="r">
+          <div class="actions">
+            <button class="btn-edit" onclick='openEdit(${JSON.stringify({id:p.id,ticker:p.ticker,name:p.name||'',qty:p.qty,cost:p.cost,stop_price:p.stop_price,target_price:p.target_price})})'>Düzenle</button>
+            <button class="btn-del" onclick="deletePos(${p.id})">Sil</button>
+          </div>
+        </td>
       </tr>`;
     }).join('')}
     </tbody>
@@ -266,7 +309,56 @@ app.get('/dashboard', requireAuth, async (req, res) => {
     <button class="btn" onclick="addPos()">+ Ekle</button>
   </div>
 </div>
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <h3>Pozisyonu Düzenle</h3>
+    <div class="form-grid">
+      <input id="e-ticker" placeholder="Ticker">
+      <input id="e-name" placeholder="Şirket adı">
+      <input id="e-qty" type="number" placeholder="Adet">
+      <input id="e-cost" type="number" placeholder="Maliyet $" step="0.01">
+      <input id="e-stop" type="number" placeholder="Stop $" step="0.01">
+      <input id="e-target" type="number" placeholder="Hedef $" step="0.01">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeEdit()">İptal</button>
+      <button class="btn" onclick="saveEdit()">Kaydet</button>
+    </div>
+  </div>
+</div>
+
 <script>
+let editId = null;
+
+function openEdit(p) {
+  editId = p.id;
+  document.getElementById('e-ticker').value = p.ticker;
+  document.getElementById('e-name').value = p.name;
+  document.getElementById('e-qty').value = p.qty;
+  document.getElementById('e-cost').value = p.cost;
+  document.getElementById('e-stop').value = p.stop_price || '';
+  document.getElementById('e-target').value = p.target_price || '';
+  document.getElementById('edit-modal').classList.add('active');
+}
+function closeEdit() {
+  document.getElementById('edit-modal').classList.remove('active');
+  editId = null;
+}
+async function saveEdit() {
+  const data = {
+    ticker: document.getElementById('e-ticker').value.toUpperCase(),
+    name: document.getElementById('e-name').value,
+    qty: document.getElementById('e-qty').value,
+    cost: document.getElementById('e-cost').value,
+    stop_price: document.getElementById('e-stop').value,
+    target_price: document.getElementById('e-target').value
+  };
+  await fetch('/positions/' + editId, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+  location.reload();
+}
+
 async function addPos() {
   const data = {
     ticker: document.getElementById('ticker').value.toUpperCase(),
@@ -297,6 +389,15 @@ app.post('/positions', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.patch('/positions/:id', requireAuth, async (req, res) => {
+  const { ticker, name, qty, cost, stop_price, target_price } = req.body;
+  await pool.query(
+    'UPDATE positions SET ticker=$1, name=$2, qty=$3, cost=$4, stop_price=$5, stop_limit=$6, target_price=$7 WHERE id=$8 AND user_id=$9',
+    [ticker, name, qty, cost, stop_price || null, stop_price ? parseFloat(stop_price) - 2 : null, target_price || null, req.params.id, req.session.userId]
+  );
+  res.json({ ok: true });
+});
+
 app.delete('/positions/:id', requireAuth, async (req, res) => {
   await pool.query('DELETE FROM positions WHERE id = $1 AND user_id = $2', [req.params.id, req.session.userId]);
   res.json({ ok: true });
@@ -322,3 +423,6 @@ app.post('/admin/password', requireAuth, async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Sunucu calisiyor: ' + PORT));
+
+
+
