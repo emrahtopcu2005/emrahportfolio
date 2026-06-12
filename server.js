@@ -244,7 +244,7 @@ app.get('/dashboard', requireAuth, async (req, res) => {
   <div class="metrics">
     <div class="metric"><div class="metric-label">Toplam yatırım</div><div class="metric-value">$${totalCost.toFixed(2)}</div></div>
     <div class="metric"><div class="metric-label">Güncel değer</div><div class="metric-value">$${totalVal.toFixed(2)}</div></div>
-    <div class="metric"><div class="metric-label">Kar/Zarar</div><div class="metric-value ${totalPnl >= 0 ? 'pos' : 'neg'}">${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}</div></div>
+   <div class="metric"><div class="metric-label">Kar/Zarar</div><div class="metric-value ${totalPnl >= 0 ? 'pos' : 'neg'}">${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}</div><div style="font-size:13px;color:#888;margin-top:2px;">${totalCost > 0 ? (totalPnl >= 0 ? '+' : '') + (totalPnl/totalCost*100).toFixed(2) + '%' : ''}</div></div>
   </div>
 
   <p class="section-label">Pozisyonlar</p>
